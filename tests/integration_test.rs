@@ -3,6 +3,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use tower::ServiceExt;
+
+use crate::common::setup;
 mod common;
 
 #[tokio::test]
@@ -102,4 +104,13 @@ async fn wrong_path_returns_404() {
         .unwrap();
     let body = String::from_utf8_lossy(&bytes);
     assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
+}
+
+#[tokio::test]
+async fn get_without_create_returns_404() {
+    let (client, address) = common::setup().await;
+    let request_url = format!("{address}/ticket/1");
+    let response = client.get(request_url).send().await.unwrap();
+    let status = response.status();
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
