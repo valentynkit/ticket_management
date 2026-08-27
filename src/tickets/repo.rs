@@ -1,29 +1,27 @@
-use serde::de::Error;
 use thiserror::Error;
 
-use crate::data::ticket_data::{Ticket, TicketDraft, TicketId, TicketPatch};
 use std::collections::BTreeMap;
+
+use crate::domain::ticket::{Ticket, TicketDraft, TicketId, TicketPatch};
 
 pub(crate) struct TicketStore {
     tickets: BTreeMap<TicketId, Ticket>,
     counter: u64,
 }
 #[derive(Error, Debug)]
-pub enum StoreError {
-    #[error("couldn't patch a ticket")]
-    Patch,
+pub(super) enum StoreError {
     #[error("ticket not found for id: {0}")]
     NotFound(u64),
 }
 impl TicketStore {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             tickets: BTreeMap::new(),
             counter: 0,
         }
     }
 
-    pub fn add_ticket(&mut self, draft: TicketDraft) -> TicketId {
+    pub(super) fn add_ticket(&mut self, draft: TicketDraft) -> TicketId {
         let id = self.counter.into();
         let ticket = Ticket::new(id, draft);
         self.tickets.insert(id, ticket);
@@ -31,7 +29,11 @@ impl TicketStore {
         id
     }
 
-    pub fn patch_ticket(&mut self, id: &TicketId, patch: TicketPatch) -> Result<(), StoreError> {
+    pub(super) fn patch_ticket(
+        &mut self,
+        id: TicketId,
+        patch: TicketPatch,
+    ) -> Result<(), StoreError> {
         let Some(ticket) = self.tickets.get_mut(&id) else {
             return Err(StoreError::NotFound(id.inner()));
         };
@@ -43,19 +45,19 @@ impl TicketStore {
 
         if let Some(value) = title {
             ticket.title = value;
-        };
+        }
 
         if let Some(value) = description {
             ticket.description = value;
-        };
+        }
 
         if let Some(value) = status {
             ticket.status = value;
-        };
+        }
 
         Ok(())
     }
-    pub fn get_ticket(&self, id: &TicketId) -> Option<&Ticket> {
+    pub(super) fn get_ticket(&self, id: &TicketId) -> Option<&Ticket> {
         self.tickets.get(id)
     }
 }

@@ -4,7 +4,6 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use crate::common::setup;
 mod common;
 
 #[tokio::test]
@@ -113,4 +112,30 @@ async fn get_without_create_returns_404() {
     let response = client.get(request_url).send().await.unwrap();
     let status = response.status();
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn full_roundtrip_returs_ticket() {
+    let (client, address) = common::setup().await;
+    let request_url = format!("{address}/ticket/0");
+    let response = client.get(request_url).send().await.unwrap();
+    let status = response.status();
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let body = serde_json::json!({
+        "title": "title",
+        "description": "description"
+    });
+
+    let request_url = format!("{address}/ticket");
+    let response = client.post(request_url).json(&body).send().await.unwrap();
+    let status = response.status();
+    let id: u64 = response.json().await.unwrap();
+
+    assert_eq!(status, StatusCode::CREATED);
+
+    let request_url = format!("{address}/ticket/{id}");
+    let response = client.get(request_url).send().await.unwrap();
+    let status = response.status();
+    assert_eq!(status, StatusCode::OK);
 }
