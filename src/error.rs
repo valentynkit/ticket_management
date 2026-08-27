@@ -1,37 +1,41 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-pub struct AppError(anyhow::Error);
-impl AppError {
-    #[must_use]
-    pub const fn inner(&self) -> &anyhow::Error {
-        &self.0
-    }
+use axum::Json;
+use serde_json::json;
+use thiserror::Error;
+use tracing::error;
+
+use crate::domain::ticket::TicketId;
+use crate::tickets::repo::StoreError;
+
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error("ticket {0} not found")]
+    NotFound(TicketId),
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
 }
 
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(value: E) -> Self {
-        Self(value.into())
-    }
-}
-
-/*
-impl From<anyhow::Error> for AppError {
-    fn from(value: anyhow::Error) -> Self {
-        Self(value)
-    }
-}
-*/
-
-impl IntoResponse for AppError {
+impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        // it's often easiest to implement `IntoResponse` by calling other implementations
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something wend wrong: {}", self.0),
-        )
-            .into_response()
+        let (status, message) = match &self {
+            Self::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            Self::Internal(e) => {
+                error!(error=?e, "internal error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal server error".into(),
+                )
+            }
+        };
+        (status, Json(json!({"error": message}))).into_response()
+    }
+}
+
+impl From<StoreError> for ApiError {
+    fn from(value: StoreError) -> Self {
+        match value {
+            StoreError::NotFound(id) => Self::NotFound(id),
+        }
     }
 }

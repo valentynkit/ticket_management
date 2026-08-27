@@ -5,12 +5,12 @@ mod state;
 mod tickets;
 
 pub use config::AppConfig;
-pub use error::AppError;
 use state::AppState;
 use std::sync::Arc;
 
 use tower_http::trace::TraceLayer;
 
+use anyhow::Context;
 use axum::{http::StatusCode, response::IntoResponse, Router};
 use tokio::{net::TcpListener, signal};
 use tracing::{error, info};
@@ -35,16 +35,23 @@ pub fn app() -> Router {
 /// Serve on an already-bound listener. Production and the test harness both go
 /// through here, so they exercise the same router, fallback and shutdown path —
 /// they differ only in which listener they hand over.
-pub async fn serve(listener: TcpListener) -> Result<(), AppError> {
-    info!(addr = %listener.local_addr()?, "listening");
+///
+/// Startup failures are `anyhow`, not [`ApiError`]: there is no client to answer,
+/// so there is no status code to pick. Giving `ApiError` a `From<io::Error>` would
+/// also let any stray io error in a handler become a silent 500.
+pub async fn serve(listener: TcpListener) -> anyhow::Result<()> {
+    info!(addr = %listener.local_addr().context("listener has no local address")?, "listening");
     axum::serve(listener, app())
         .with_graceful_shutdown(shutdown_signal())
-        .await?;
-    Ok(())
+        .await
+        .context("server stopped unexpectedly")
 }
 
-pub async fn run(config: &AppConfig) -> Result<(), AppError> {
-    let listener = TcpListener::bind(config.server().address()).await?;
+pub async fn run(config: &AppConfig) -> anyhow::Result<()> {
+    let address = config.server().address();
+    let listener = TcpListener::bind(&address)
+        .await
+        .with_context(|| format!("could not bind {address}"))?;
     serve(listener).await
 }
 

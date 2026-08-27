@@ -13,12 +13,6 @@ pub(crate) enum Status {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub(crate) struct TicketId(u64);
-impl TicketId {
-    pub(crate) const fn inner(self) -> u64 {
-        self.0
-    }
-}
-
 impl From<u64> for TicketId {
     fn from(value: u64) -> Self {
         Self(value)

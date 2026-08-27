@@ -139,3 +139,63 @@ async fn full_roundtrip_returs_ticket() {
     let status = response.status();
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn get_missing_ticket_returns_typed_error_body() {
+    let (client, address) = common::setup().await;
+    let response = client
+        .get(format!("{address}/ticket/99"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["error"], "ticket 99 not found");
+}
+
+#[tokio::test]
+async fn patch_missing_ticket_returns_404() {
+    let (client, address) = common::setup().await;
+    let response = client
+        .patch(format!("{address}/ticket/99"))
+        .json(&serde_json::json!({ "title": "renamed" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn patch_updates_ticket_and_returns_204() {
+    let (client, address) = common::setup().await;
+
+    let response = client
+        .post(format!("{address}/ticket"))
+        .json(&serde_json::json!({ "title": "before", "description": "description" }))
+        .send()
+        .await
+        .unwrap();
+    let id: u64 = response.json().await.unwrap();
+
+    let response = client
+        .patch(format!("{address}/ticket/{id}"))
+        .json(&serde_json::json!({ "title": "after", "status": "in_progress" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let ticket: serde_json::Value = client
+        .get(format!("{address}/ticket/{id}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ticket["title"], "after");
+    assert_eq!(ticket["status"], "in_progress");
+    assert_eq!(ticket["description"], "description");
+}

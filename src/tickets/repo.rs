@@ -9,9 +9,9 @@ pub(crate) struct TicketStore {
     counter: u64,
 }
 #[derive(Error, Debug)]
-pub(super) enum StoreError {
+pub(crate) enum StoreError {
     #[error("ticket not found for id: {0}")]
-    NotFound(u64),
+    NotFound(TicketId),
 }
 impl TicketStore {
     pub(crate) const fn new() -> Self {
@@ -35,7 +35,7 @@ impl TicketStore {
         patch: TicketPatch,
     ) -> Result<(), StoreError> {
         let Some(ticket) = self.tickets.get_mut(&id) else {
-            return Err(StoreError::NotFound(id.inner()));
+            return Err(StoreError::NotFound(id));
         };
         let TicketPatch {
             title,
@@ -57,7 +57,7 @@ impl TicketStore {
 
         Ok(())
     }
-    pub(super) fn get_ticket(&self, id: &TicketId) -> Option<&Ticket> {
-        self.tickets.get(id)
+    pub(super) fn get_ticket(&self, id: TicketId) -> Result<&Ticket, StoreError> {
+        self.tickets.get(&id).ok_or(StoreError::NotFound(id))
     }
 }

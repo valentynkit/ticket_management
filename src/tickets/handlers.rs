@@ -8,7 +8,7 @@ use axum::{
 
 use crate::{
     domain::ticket::{Ticket, TicketDraft, TicketId, TicketPatch},
-    error::AppError,
+    error::ApiError,
     state::AppState,
 };
 
@@ -16,16 +16,16 @@ pub(super) async fn patch_ticket(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u64>,
     Json(payload): Json<TicketPatch>,
-) -> Result<(), AppError> {
+) -> Result<StatusCode, ApiError> {
     let mut ticket_store = state.store.lock().expect("stored lock poisoned");
     ticket_store.patch_ticket(id.into(), payload)?;
-    Ok(())
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub(super) async fn create_ticket(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<TicketDraft>,
-) -> Result<(StatusCode, Json<TicketId>), AppError> {
+) -> Result<(StatusCode, Json<TicketId>), ApiError> {
     let mut ticket_store = state.store.lock().expect("stored lock poisoned");
     let ticket_id = ticket_store.add_ticket(payload);
     Ok((StatusCode::CREATED, Json(ticket_id)))
@@ -34,13 +34,9 @@ pub(super) async fn create_ticket(
 pub(super) async fn get_ticket(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u64>,
-) -> Result<(StatusCode, Json<Option<Ticket>>), AppError> {
+) -> Result<Json<Ticket>, ApiError> {
     let ticket_store = state.store.lock().expect("stored lock poisoned");
-    let ticket = ticket_store
-        .get_ticket(&id.into())
-        .map(|item| item.to_owned());
-    let response = ticket.map_or((StatusCode::NOT_FOUND, Json(None)), |value| {
-        (StatusCode::OK, Json(Some(value)))
-    });
-    Ok(response)
+    // 404 now travels the error channel; the success type says only what success is.
+    let ticket = ticket_store.get_ticket(id.into())?.clone();
+    Ok(Json(ticket))
 }

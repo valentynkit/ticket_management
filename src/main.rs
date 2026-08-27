@@ -1,4 +1,4 @@
-use ticket_management::{AppConfig, AppError};
+use ticket_management::AppConfig;
 use tracing::{error, info};
 use tracing_subscriber::{fmt::time, EnvFilter};
 
@@ -24,13 +24,10 @@ async fn main() {
     info!(environment = config.environment().as_str(), "starting");
 
     if let Err(err) = ticket_management::run(&config).await {
-        process_shutdown(err).await;
+        // `{:#}` renders the whole anyhow context chain on one line.
+        error!(error = format!("{err:#}"), "server exited with an error");
+        std::process::exit(1);
     }
-}
-
-async fn process_shutdown(err: AppError) {
-    let err = err.inner().to_string();
-    error!(err, "got the error");
 }
 
 fn logging_init(default_filter: &str) {
