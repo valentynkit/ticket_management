@@ -6,14 +6,17 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.104"
 axum = "0.8.9"
-config = "0.15.25"
-http-body-util = "0.1.5"
-reqwest = { version = "0.13.4", features = ["json"] }
+# default-features off: `config` otherwise pulls JSON5, RON, INI and TOML parsers.
+config = { version = "0.15.25", default-features = false, features = ["yaml"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.20"
 tokio = { version = "1", features = ["full"] }
-tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.0", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+reqwest = { version = "0.13.4", features = ["json"] }
+tower = { version = "0.5.3", features = ["util"] }

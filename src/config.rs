@@ -1,22 +1,38 @@
-use std::{path::Path, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
-use config::{Config, File};
+use config::{Environment as EnvSource, File};
 use serde::Deserialize;
 use thiserror::Error;
 
-#[derive(Deserialize, Clone, Copy)]
-#[serde(try_from = "String")]
-enum Environment {
+/// Which deployment we are. Selects the config file layered on top of `base.yaml`,
+/// so it must be known *before* the config is built — it comes from `APP_ENVIRONMENT`,
+/// never from the files themselves.
+/// `Deserialize` is needed because `APP_ENVIRONMENT` also matches the `APP_` prefix of
+/// the env-var source, so it lands in the config tree as `environment`. With
+/// `deny_unknown_fields` that key has to be a real field, not a skipped one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Environment {
+    #[default]
     Local,
     Production,
 }
 
 impl Environment {
-    const fn as_str(self) -> &'static str {
+    const ENV_VAR: &'static str = "APP_ENVIRONMENT";
+
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Environment::Local => "local",
-            Environment::Production => "production",
+            Self::Local => "local",
+            Self::Production => "production",
         }
+    }
+
+    fn from_env() -> Result<Self, AppConfigError> {
+        std::env::var(Self::ENV_VAR).map_or_else(|_| Ok(Self::default()), |value| value.parse())
     }
 }
 
@@ -24,81 +40,119 @@ impl FromStr for Environment {
     type Err = AppConfigError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
+        match s.trim().to_lowercase().as_str() {
             "local" => Ok(Self::Local),
             "production" => Ok(Self::Production),
-            value => Err(AppConfigError::WrongEnv(value.into())),
+            other => Err(AppConfigError::UnknownEnvironment(other.to_owned())),
         }
     }
 }
 
-impl TryFrom<String> for Environment {
-    type Error = AppConfigError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.try_into()
-    }
-}
-
-impl TryFrom<&'static str> for Environment {
-    type Error = AppConfigError;
-
-    fn try_from(value: &'static str) -> Result<Self, Self::Error> {
-        Environment::from_str(value)
-    }
-}
-
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum AppConfigError {
-    #[error("Environment is empty")]
-    EmptyEnv,
-    #[error("Environment couldn't be parsed {0}")]
-    WrongEnv(String),
-    #[error("Could not read Environment from APP_ENVIRONMENT")]
-    NoAppEnv,
-    #[error("Couldnot load config, inner error: {source}")]
-    CouldnotLoadConfig {
+    #[error("`{0}` is not a known environment (expected `local` or `production`)")]
+    UnknownEnvironment(String),
+
+    #[error("could not read configuration from `{}`", dir.display())]
+    Unreadable {
+        dir: PathBuf,
+        #[source]
+        source: config::ConfigError,
+    },
+
+    #[error("configuration is invalid (check `{}` and `APP_*` env vars)", dir.display())]
+    Invalid {
+        dir: PathBuf,
         #[source]
         source: config::ConfigError,
     },
 }
 
-impl From<config::ConfigError> for AppConfigError {
-    fn from(value: config::ConfigError) -> Self {
-        Self::CouldnotLoadConfig { source: value }
-    }
-}
-#[derive(Deserialize)]
-pub struct AppConfig {
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerConfig {
+    host: String,
     port: u16,
 }
 
+impl ServerConfig {
+    pub fn address(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryConfig {
+    log_filter: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppConfig {
+    /// Populated from `APP_ENVIRONMENT` via the env-var source, then overwritten by
+    /// [`AppConfig::load`] with the case-insensitive parse it already had to do to
+    /// pick the config file.
+    #[serde(default)]
+    environment: Environment,
+    server: ServerConfig,
+    telemetry: TelemetryConfig,
+}
+
 impl AppConfig {
+    /// Layered load: `base.yaml`, then `{environment}.yaml`, then `APP_*` env vars.
+    /// Later sources win. Env vars nest with `__`, e.g. `APP_SERVER__PORT=9999`.
     pub fn load() -> Result<Self, AppConfigError> {
-        let base_dir = env!("CARGO_MANIFEST_DIR");
-        // TODO: how to get env? before reading settings?
-        let env: Environment = std::env::var("APP_ENVIRONMENT")
-            .map_err(|_| AppConfigError::NoAppEnv)?
-            .try_into()?;
+        let environment = Environment::from_env()?;
+        let dir = Self::config_dir();
 
-        let extension = ".yaml";
-        let mut base_path = Path::new(base_dir).join("base");
-        let mut env_path = Path::new(base_dir).join(env.as_str());
-        base_path.add_extension(extension);
-        env_path.add_extension(extension);
+        let settings = config::Config::builder()
+            .add_source(File::from(dir.join("base.yaml")))
+            .add_source(File::from(
+                dir.join(format!("{}.yaml", environment.as_str())),
+            ))
+            .add_source(
+                EnvSource::with_prefix("APP")
+                    .prefix_separator("_")
+                    .separator("__")
+                    .try_parsing(true),
+            )
+            .build()
+            .map_err(|source| AppConfigError::Unreadable {
+                dir: dir.clone(),
+                source,
+            })?;
 
-        // TODO:
-        let settings = Config::builder()
-            .add_source(File::from(base_path))
-            .add_source(File::from(env_path))
-            .build()?;
-
-        settings
-            .try_deserialize::<AppConfig>()
-            .map_err(|err| err.into())
+        let mut config: Self =
+            settings
+                .try_deserialize()
+                .map_err(|source| AppConfigError::Invalid {
+                    dir: dir.clone(),
+                    source,
+                })?;
+        config.environment = environment;
+        Ok(config)
     }
 
-    pub(crate) fn port(&self) -> u16 {
-        self.port
+    /// `APP_CONFIG_DIR` wins so a deployed binary can point elsewhere; otherwise the
+    /// crate's own `configuration/`, which is correct under both `cargo run` and
+    /// `cargo test` (those have different working directories).
+    fn config_dir() -> PathBuf {
+        std::env::var("APP_CONFIG_DIR").map_or_else(
+            |_| Path::new(env!("CARGO_MANIFEST_DIR")).join("configuration"),
+            PathBuf::from,
+        )
+    }
+
+    pub const fn environment(&self) -> Environment {
+        self.environment
+    }
+
+    pub const fn server(&self) -> &ServerConfig {
+        &self.server
+    }
+
+    pub fn log_filter(&self) -> &str {
+        &self.telemetry.log_filter
     }
 }

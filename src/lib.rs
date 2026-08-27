@@ -32,19 +32,20 @@ pub fn app() -> Router {
     build_router(AppState::new())
 }
 
+/// Serve on an already-bound listener. Production and the test harness both go
+/// through here, so they exercise the same router, fallback and shutdown path —
+/// they differ only in which listener they hand over.
 pub async fn serve(listener: TcpListener) -> Result<(), AppError> {
+    info!(addr = %listener.local_addr()?, "listening");
     axum::serve(listener, app())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
 }
 
-pub async fn run(config: AppConfig) -> Result<(), AppError> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", config.port())).await?;
-    let local_addr = listener.local_addr().unwrap();
-    serve(listener).await?;
-    info!("listening on {}", local_addr);
-    Ok(())
+pub async fn run(config: &AppConfig) -> Result<(), AppError> {
+    let listener = TcpListener::bind(config.server().address()).await?;
+    serve(listener).await
 }
 
 async fn shutdown_signal() {
