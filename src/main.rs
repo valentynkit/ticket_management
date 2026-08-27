@@ -1,4 +1,5 @@
-use ticket_management::AppError;
+use config::Config;
+use ticket_management::{AppConfig, AppError};
 use tracing::{error, info};
 use tracing_subscriber::{fmt::time, EnvFilter};
 
@@ -6,7 +7,8 @@ use tracing_subscriber::{fmt::time, EnvFilter};
 async fn main() {
     logging_init();
     info!("logging_init");
-    if let Err(err) = ticket_management::run().await {
+    let config = AppConfig::load().unwrap();
+    if let Err(err) = ticket_management::run(config).await {
         process_shutdown(err).await;
     }
 }

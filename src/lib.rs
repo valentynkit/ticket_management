@@ -1,8 +1,10 @@
+mod config;
 mod domain;
 mod error;
 mod state;
 mod tickets;
 
+pub use config::AppConfig;
 pub use error::AppError;
 use state::AppState;
 use std::sync::Arc;
@@ -30,12 +32,18 @@ pub fn app() -> Router {
     build_router(AppState::new())
 }
 
-pub async fn run() -> Result<(), AppError> {
-    let listener = TcpListener::bind("0.0.0.0:3000").await?;
-    info!("listening on {}", listener.local_addr().unwrap());
+pub async fn serve(listener: TcpListener) -> Result<(), AppError> {
     axum::serve(listener, app())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+    Ok(())
+}
+
+pub async fn run(config: AppConfig) -> Result<(), AppError> {
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", config.port())).await?;
+    let local_addr = listener.local_addr().unwrap();
+    serve(listener).await?;
+    info!("listening on {}", local_addr);
     Ok(())
 }
 
