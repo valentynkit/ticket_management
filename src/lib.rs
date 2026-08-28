@@ -28,8 +28,8 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-pub fn app() -> Router {
-    build_router(AppState::new())
+pub async fn app(db_connection: String) -> Router {
+    build_router(AppState::new(db_connection).await)
 }
 
 /// Serve on an already-bound listener. Production and the test harness both go
@@ -39,9 +39,9 @@ pub fn app() -> Router {
 /// Startup failures are `anyhow`, not [`ApiError`]: there is no client to answer,
 /// so there is no status code to pick. Giving `ApiError` a `From<io::Error>` would
 /// also let any stray io error in a handler become a silent 500.
-pub async fn serve(listener: TcpListener) -> anyhow::Result<()> {
+pub async fn serve(listener: TcpListener, db_connection: String) -> anyhow::Result<()> {
     info!(addr = %listener.local_addr().context("listener has no local address")?, "listening");
-    axum::serve(listener, app())
+    axum::serve(listener, app(db_connection).await)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server stopped unexpectedly")
@@ -49,10 +49,11 @@ pub async fn serve(listener: TcpListener) -> anyhow::Result<()> {
 
 pub async fn run(config: &AppConfig) -> anyhow::Result<()> {
     let address = config.server().address();
+    let db_connection = config.server().postgres_connection();
     let listener = TcpListener::bind(&address)
         .await
         .with_context(|| format!("could not bind {address}"))?;
-    serve(listener).await
+    serve(listener, db_connection).await
 }
 
 async fn shutdown_signal() {

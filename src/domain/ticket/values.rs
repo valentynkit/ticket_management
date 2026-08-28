@@ -3,8 +3,9 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Serialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "status", rename_all = "snake_case")]
 pub(crate) enum Status {
     ToDo,
     InProgress,

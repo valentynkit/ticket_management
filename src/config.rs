@@ -70,14 +70,18 @@ pub enum AppConfigError {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ServerConfig {
+pub(crate) struct ServerConfig {
     host: String,
     port: u16,
+    postgres_connection: String,
 }
 
 impl ServerConfig {
-    pub fn address(&self) -> String {
+    pub(crate) fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+    pub(crate) fn postgres_connection(&self) -> String {
+        self.postgres_connection.clone()
     }
 }
 
