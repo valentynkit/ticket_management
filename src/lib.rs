@@ -5,6 +5,7 @@ mod state;
 mod tickets;
 
 pub use config::AppConfig;
+use sqlx::PgPool;
 use state::AppState;
 use std::sync::Arc;
 
@@ -28,8 +29,10 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-pub async fn app(db_connection: String) -> Router {
-    build_router(AppState::new(db_connection).await)
+pub async fn app(db_connection: String) -> anyhow::Result<Router> {
+    let state = AppState::new(db_connection).await?;
+    migrate(&state.pg_pool).await?;
+    Ok(build_router(state))
 }
 
 /// Serve on an already-bound listener. Production and the test harness both go
@@ -39,9 +42,9 @@ pub async fn app(db_connection: String) -> Router {
 /// Startup failures are `anyhow`, not [`ApiError`]: there is no client to answer,
 /// so there is no status code to pick. Giving `ApiError` a `From<io::Error>` would
 /// also let any stray io error in a handler become a silent 500.
-pub async fn serve(listener: TcpListener, db_connection: String) -> anyhow::Result<()> {
+pub async fn serve(listener: TcpListener, router: Router) -> anyhow::Result<()> {
     info!(addr = %listener.local_addr().context("listener has no local address")?, "listening");
-    axum::serve(listener, app(db_connection).await)
+    axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server stopped unexpectedly")
@@ -53,7 +56,8 @@ pub async fn run(config: &AppConfig) -> anyhow::Result<()> {
     let listener = TcpListener::bind(&address)
         .await
         .with_context(|| format!("could not bind {address}"))?;
-    serve(listener, db_connection).await
+    let app = app(db_connection).await?;
+    serve(listener, app).await
 }
 
 async fn shutdown_signal() {
@@ -78,4 +82,11 @@ async fn shutdown_signal() {
         () = ctrl_c => {error!("shutdown ctrl_c")},
         () = terminate => {error!("shutdown terminate")}
     }
+}
+
+async fn migrate(pg_pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::migrate!()
+        .run(pg_pool)
+        .await
+        .context("migrations failed")
 }

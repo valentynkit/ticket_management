@@ -6,7 +6,6 @@ use crate::domain::ticket::{Ticket, TicketDraft, TicketId, TicketPatch};
 
 pub(crate) struct TicketStore {
     tickets: BTreeMap<TicketId, Ticket>,
-    counter: u64,
 }
 #[derive(Error, Debug)]
 pub(crate) enum StoreError {
@@ -17,15 +16,13 @@ impl TicketStore {
     pub(crate) const fn new() -> Self {
         Self {
             tickets: BTreeMap::new(),
-            counter: 0,
         }
     }
 
     pub(super) fn add_ticket(&mut self, draft: TicketDraft) -> TicketId {
-        let id = self.counter.into();
+        let id = TicketId::new();
         let ticket = Ticket::new(id, draft);
         self.tickets.insert(id, ticket);
-        self.counter += 1;
         id
     }
 

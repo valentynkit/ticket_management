@@ -3,6 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use tower::ServiceExt;
+use uuid::Uuid;
 
 mod common;
 
@@ -13,7 +14,8 @@ async fn create_ticket_returns_201() {
         "description": "test description"
     });
 
-    let response = ticket_management::app()
+    let response = common::app()
+        .await
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -39,7 +41,8 @@ async fn create_ticket_returns_422() {
         "wrong_description": "test description"
     });
 
-    let response = ticket_management::app()
+    let response = common::app()
+        .await
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -65,7 +68,8 @@ async fn create_ticket_returns_validation_error() {
         "description": "te"
     });
 
-    let response = ticket_management::app()
+    let response = common::app()
+        .await
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -86,7 +90,8 @@ async fn create_ticket_returns_validation_error() {
 
 #[tokio::test]
 async fn wrong_path_returns_404() {
-    let response = ticket_management::app()
+    let response = common::app()
+        .await
         .oneshot(
             Request::builder()
                 .method("GET")
@@ -108,7 +113,7 @@ async fn wrong_path_returns_404() {
 #[tokio::test]
 async fn get_without_create_returns_404() {
     let (client, address) = common::setup().await;
-    let request_url = format!("{address}/ticket/1");
+    let request_url = format!("{address}/ticket/{}", Uuid::nil());
     let response = client.get(request_url).send().await.unwrap();
     let status = response.status();
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -117,7 +122,7 @@ async fn get_without_create_returns_404() {
 #[tokio::test]
 async fn full_roundtrip_returs_ticket() {
     let (client, address) = common::setup().await;
-    let request_url = format!("{address}/ticket/0");
+    let request_url = format!("{address}/ticket/{}", Uuid::nil());
     let response = client.get(request_url).send().await.unwrap();
     let status = response.status();
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -130,7 +135,7 @@ async fn full_roundtrip_returs_ticket() {
     let request_url = format!("{address}/ticket");
     let response = client.post(request_url).json(&body).send().await.unwrap();
     let status = response.status();
-    let id: u64 = response.json().await.unwrap();
+    let id: Uuid = response.json().await.unwrap();
 
     assert_eq!(status, StatusCode::CREATED);
 
@@ -143,22 +148,23 @@ async fn full_roundtrip_returs_ticket() {
 #[tokio::test]
 async fn get_missing_ticket_returns_typed_error_body() {
     let (client, address) = common::setup().await;
+    let missing = Uuid::nil();
     let response = client
-        .get(format!("{address}/ticket/99"))
+        .get(format!("{address}/ticket/{missing}"))
         .send()
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["error"], "ticket 99 not found");
+    assert_eq!(body["error"], format!("ticket {missing} not found"));
 }
 
 #[tokio::test]
 async fn patch_missing_ticket_returns_404() {
     let (client, address) = common::setup().await;
     let response = client
-        .patch(format!("{address}/ticket/99"))
+        .patch(format!("{address}/ticket/{}", Uuid::nil()))
         .json(&serde_json::json!({ "title": "renamed" }))
         .send()
         .await
@@ -177,7 +183,7 @@ async fn patch_updates_ticket_and_returns_204() {
         .send()
         .await
         .unwrap();
-    let id: u64 = response.json().await.unwrap();
+    let id: Uuid = response.json().await.unwrap();
 
     let response = client
         .patch(format!("{address}/ticket/{id}"))

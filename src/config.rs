@@ -152,8 +152,12 @@ impl AppConfig {
         self.environment
     }
 
-    pub const fn server(&self) -> &ServerConfig {
+    pub(crate) const fn server(&self) -> &ServerConfig {
         &self.server
+    }
+
+    pub fn postgres_connection(&self) -> String {
+        self.server.postgres_connection()
     }
 
     pub fn log_filter(&self) -> &str {

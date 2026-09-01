@@ -2,20 +2,31 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Serialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
-#[sqlx(type_name = "status", rename_all = "snake_case")]
+#[sqlx(type_name = "ticket_status", rename_all = "snake_case")]
 pub(crate) enum Status {
-    ToDo,
+    Todo,
     InProgress,
     Done,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub(crate) struct TicketId(u64);
-impl From<u64> for TicketId {
-    fn from(value: u64) -> Self {
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, sqlx::Type,
+)]
+#[sqlx(transparent)]
+pub(crate) struct TicketId(Uuid);
+
+impl TicketId {
+    pub(crate) fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+impl From<Uuid> for TicketId {
+    fn from(value: Uuid) -> Self {
         Self(value)
     }
 }
@@ -26,7 +37,8 @@ impl Display for TicketId {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Eq, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Clone, Eq, Deserialize, Serialize, sqlx::Type)]
+#[sqlx(transparent)]
 #[serde(try_from = "String")]
 pub(crate) struct Description(String);
 
@@ -36,8 +48,9 @@ impl Display for Description {
     }
 }
 
-const fn validate_description(str: &str) -> Result<(), DescriptionError> {
-    match str.len() {
+fn validate_description(str: &str) -> Result<(), DescriptionError> {
+    let str_length = str.chars().count();
+    match str_length {
         0 => Err(DescriptionError::Empty),
         x if x < 5 => Err(DescriptionError::TooShort(x)),
         x if x > 200 => Err(DescriptionError::TooLong(x)),
@@ -71,12 +84,14 @@ pub(crate) enum DescriptionError {
     TooLong(usize),
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Eq, sqlx::Type)]
 #[serde(try_from = "String")]
+#[sqlx(transparent)]
 pub(crate) struct Title(String);
 
-const fn validate_title(str: &str) -> Result<(), TitleError> {
-    match str.len() {
+fn validate_title(str: &str) -> Result<(), TitleError> {
+    let str_length = str.chars().count();
+    match str_length {
         0 => Err(TitleError::Empty),
         x if x < 3 => Err(TitleError::TooShort(x)),
         x if x > 20 => Err(TitleError::TooLong(x)),
@@ -106,7 +121,7 @@ pub(crate) enum TitleError {
     Empty,
     #[error("The title couldn't be shorter than 3 characters, actual lenght: `{0}`")]
     TooShort(usize),
-    #[error("The description couldn't be longer than 20 characters, actual lenght: `{0}`")]
+    #[error("The title couldn't be longer than 20 characters, actual lenght: `{0}`")]
     TooLong(usize),
 }
 

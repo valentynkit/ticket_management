@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use uuid::Uuid;
 
 use crate::{
     domain::ticket::{Ticket, TicketDraft, TicketId, TicketPatch},
@@ -14,7 +15,7 @@ use crate::{
 
 pub(super) async fn patch_ticket(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<u64>,
+    Path(id): Path<Uuid>,
     Json(payload): Json<TicketPatch>,
 ) -> Result<StatusCode, ApiError> {
     let mut ticket_store = state.store.lock().expect("stored lock poisoned");
@@ -33,7 +34,7 @@ pub(super) async fn create_ticket(
 
 pub(super) async fn get_ticket(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<u64>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<Ticket>, ApiError> {
     let ticket_store = state.store.lock().expect("stored lock poisoned");
     // 404 now travels the error channel; the success type says only what success is.
