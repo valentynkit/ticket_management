@@ -31,7 +31,7 @@ fn build_router(state: AppState) -> Router {
 
 pub async fn app(db_connection: String) -> anyhow::Result<Router> {
     let state = AppState::new(db_connection).await?;
-    migrate(&state.pg_pool).await?;
+    migrate(state.pg_pool()).await?;
     Ok(build_router(state))
 }
 

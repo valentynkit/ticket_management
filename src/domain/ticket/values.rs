@@ -17,13 +17,7 @@ pub(crate) enum Status {
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, sqlx::Type,
 )]
 #[sqlx(transparent)]
-pub(crate) struct TicketId(Uuid);
-
-impl TicketId {
-    pub(crate) fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-}
+pub(crate) struct TicketId(pub(crate) Uuid);
 
 impl From<Uuid> for TicketId {
     fn from(value: Uuid) -> Self {
@@ -40,7 +34,7 @@ impl Display for TicketId {
 #[derive(Debug, PartialEq, Clone, Eq, Deserialize, Serialize, sqlx::Type)]
 #[sqlx(transparent)]
 #[serde(try_from = "String")]
-pub(crate) struct Description(String);
+pub(crate) struct Description(pub(crate) String);
 
 impl Display for Description {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -87,7 +81,7 @@ pub(crate) enum DescriptionError {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Eq, sqlx::Type)]
 #[serde(try_from = "String")]
 #[sqlx(transparent)]
-pub(crate) struct Title(String);
+pub(crate) struct Title(pub(crate) String);
 
 fn validate_title(str: &str) -> Result<(), TitleError> {
     let str_length = str.chars().count();

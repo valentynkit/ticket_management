@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Mutex, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
 use sqlx::{
@@ -8,17 +8,13 @@ use sqlx::{
 use tracing::info;
 static PG_MAX_CONNECTIONS: u32 = 50;
 static PG_MIN_CONNECTIONS: u32 = 5;
-use crate::tickets::repo::TicketStore;
 
 pub(crate) struct AppState {
-    /// TODO: rewrite to RwLock
-    pub(crate) store: Mutex<TicketStore>,
-    pub(crate) pg_pool: PgPool,
+    pg_pool: PgPool,
 }
 
 impl AppState {
     pub(crate) async fn new(db_connection: String) -> anyhow::Result<Self> {
-        let store = Mutex::new(TicketStore::new());
         let connect_options = PgConnectOptions::from_str(&db_connection)
             .context("`postgres_connection` is not a valid postgres URL")?;
         let pg_options = PgPoolOptions::new()
@@ -37,6 +33,9 @@ impl AppState {
             max_connections = PG_MAX_CONNECTIONS,
             "PG Pool created"
         );
-        Ok(Self { store, pg_pool })
+        Ok(Self { pg_pool })
+    }
+    pub(crate) fn pg_pool(&self) -> &PgPool {
+        &self.pg_pool
     }
 }

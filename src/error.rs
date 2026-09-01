@@ -36,6 +36,7 @@ impl From<StoreError> for ApiError {
     fn from(value: StoreError) -> Self {
         match value {
             StoreError::NotFound(id) => Self::NotFound(id),
+            StoreError::DbDriverInternal(err) => Self::Internal(err.into()),
         }
     }
 }
