@@ -1,0 +1,7 @@
+# All interfaces: inside a container the port is published by the runtime.
+server:
+  host: 0.0.0.0
+  postgres_connection: "postgres://prod_placeholder"
+
+telemetry:
+  log_filter: "ticket_management=info,tower_http=info,axum=info"

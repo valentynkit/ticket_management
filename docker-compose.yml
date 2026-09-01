@@ -1,0 +1,12 @@
+services:
+  ticket-db:
+    image: postgres:18
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ticket
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ticket_db
+    volumes:
+      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf

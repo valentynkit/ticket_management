@@ -1,0 +1,4 @@
+# Loopback only: a dev server on 0.0.0.0 is reachable from the whole network.
+server:
+  host: 127.0.0.1
+  postgres_connection: "postgres://ticket:password@127.0.0.1:5432/ticket_db"
