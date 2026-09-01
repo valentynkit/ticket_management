@@ -9,8 +9,23 @@ use crate::domain::ticket::{
 pub(crate) enum StoreError {
     #[error("ticket not found for id: {0}")]
     NotFound(TicketId),
+    #[error("request violates constraint `{0}`")]
+    Constraint(String),
     #[error(transparent)]
-    DbDriverInternal(#[from] sqlx::Error),
+    DbDriverInternal(sqlx::Error),
+}
+
+impl From<sqlx::Error> for StoreError {
+    fn from(err: sqlx::Error) -> Self {
+        // 23514 check_violation / 23502 not_null_violation: the payload broke a column
+        // constraint, so it is the caller's problem, not a server fault.
+        let violated = err
+            .as_database_error()
+            .filter(|db| matches!(db.code().as_deref(), Some("23514" | "23502")))
+            .map(|db| db.constraint().unwrap_or("unknown").to_owned());
+
+        violated.map_or_else(|| Self::DbDriverInternal(err), Self::Constraint)
+    }
 }
 
 pub(super) async fn patch_ticket(
@@ -66,6 +81,53 @@ pub(super) async fn get_ticket(pool: &PgPool, id: TicketId) -> Result<Ticket, St
     .fetch_optional(pool)
     .await?
     .ok_or(StoreError::NotFound(id))
+}
+
+pub(super) async fn delete_ticket(pool: &PgPool, id: TicketId) -> Result<(), StoreError> {
+    let rows_affected = sqlx::query!("DELETE FROM tickets WHERE id = $1", id.0)
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(StoreError::NotFound(id));
+    }
+    Ok(())
+}
+
+pub(super) async fn list_tickets(
+    pool: &PgPool,
+    after: Option<TicketId>,
+    limit: i64,
+) -> Result<Vec<Ticket>, StoreError> {
+    // Keyset pagination: uuidv7 sorts by creation time, so the primary key doubles as
+    // the cursor and the index seeks straight to it instead of counting past OFFSET rows.
+    let tickets = sqlx::query_as!(
+        Ticket,
+        r#"
+            SELECT id AS "id: TicketId",
+                   title AS "title: Title",
+                   description AS "description: Description",
+                   status AS "status: Status",
+                   created_at,
+                   updated_at
+            FROM tickets
+            WHERE $1::uuid IS NULL OR id > $1
+            ORDER BY id
+            LIMIT $2
+        "#,
+        after.map(|cursor| cursor.0),
+        limit
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(tickets)
+}
+
+pub(super) async fn ping(pool: &PgPool) -> Result<(), StoreError> {
+    sqlx::query!("SELECT 1 AS one").fetch_one(pool).await?;
+    Ok(())
 }
 
 pub(super) async fn add_ticket(pool: &PgPool, draft: TicketDraft) -> Result<TicketId, StoreError> {

@@ -1,11 +1,47 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use axum::Router;
 use reqwest::Client;
+use sqlx::{AssertSqlSafe, Connection, PgConnection};
 use ticket_management::AppConfig;
 use tokio::net::TcpListener;
 
-pub async fn app() -> Router {
+static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+/// Every test gets its own database so the suite can assert on whole-table state
+/// (pagination, counts) without seeing rows from tests running in parallel.
+/// Process id plus a counter is enough: unique within a run, and stdlib only.
+async fn provision_database() -> String {
     let config = AppConfig::load().expect("could not load configuration");
-    ticket_management::app(config.postgres_connection())
+    let base = config.postgres_connection();
+    let (prefix, _) = base
+        .rsplit_once('/')
+        .expect("connection string has no database segment");
+
+    let name = format!(
+        "test_{}_{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+
+    let mut maintenance = PgConnection::connect(&format!("{prefix}/postgres"))
+        .await
+        .expect("could not reach the maintenance database");
+
+    // A database name cannot be a bind parameter, so it is interpolated. Safe here
+    // because `name` is built from a pid and a counter, never from input.
+    sqlx::raw_sql(AssertSqlSafe(format!(r#"CREATE DATABASE "{name}""#)))
+        .execute(&mut maintenance)
+        .await
+        .expect("could not create the test database");
+
+    format!("{prefix}/{name}")
+}
+
+/// Builds the app against a fresh database. `app` runs the embedded migrations, so the
+/// schema is whatever `migrations/` says — no fixture files to drift.
+pub async fn app() -> Router {
+    ticket_management::app(provision_database().await)
         .await
         .expect("could not build the app")
 }
