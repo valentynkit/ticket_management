@@ -1,16 +1,24 @@
 use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
+use moka::future::Cache;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
     PgPool,
 };
 use tracing::info;
+use uuid::Uuid;
+
+use crate::{
+    cache::{self, AppCache},
+    domain::ticket::Ticket,
+};
 static PG_MAX_CONNECTIONS: u32 = 50;
 static PG_MIN_CONNECTIONS: u32 = 5;
 
 pub(crate) struct AppState {
     pg_pool: PgPool,
+    cache: AppCache,
 }
 
 impl AppState {
@@ -33,9 +41,13 @@ impl AppState {
             max_connections = PG_MAX_CONNECTIONS,
             "PG Pool created"
         );
-        Ok(Self { pg_pool })
+        let cache = AppCache::new().await;
+        Ok(Self { pg_pool, cache })
     }
     pub(crate) fn pg_pool(&self) -> &PgPool {
         &self.pg_pool
+    }
+    pub(crate) fn ticket_cache(&self) -> &Cache<Uuid, Ticket> {
+        &self.cache.tickets
     }
 }

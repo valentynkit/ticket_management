@@ -24,7 +24,7 @@ impl TicketDraft {
         &self.description
     }
 }
-#[derive(Serialize, Clone, sqlx::FromRow)]
+#[derive(Serialize, Debug, Clone, sqlx::FromRow)]
 pub(crate) struct Ticket {
     pub(crate) id: TicketId,
     pub(crate) title: Title,

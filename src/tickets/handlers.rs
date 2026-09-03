@@ -35,7 +35,7 @@ pub(super) async fn patch_ticket(
     Path(id): Path<Uuid>,
     Json(payload): Json<TicketPatch>,
 ) -> Result<StatusCode, ApiError> {
-    repo::patch_ticket(state.pg_pool(), id.into(), payload).await?;
+    repo::patch_ticket(&state, id.into(), payload).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -43,7 +43,7 @@ pub(super) async fn delete_ticket(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    repo::delete_ticket(state.pg_pool(), id.into()).await?;
+    repo::delete_ticket(&state, id.into()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -80,7 +80,7 @@ pub(super) async fn create_ticket(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<TicketDraft>,
 ) -> Result<(StatusCode, Json<TicketId>), ApiError> {
-    let ticket_id = repo::add_ticket(state.pg_pool(), payload).await?;
+    let ticket_id = repo::add_ticket(&state, payload).await?;
     Ok((StatusCode::CREATED, Json(ticket_id)))
 }
 
@@ -89,6 +89,6 @@ pub(super) async fn get_ticket(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Ticket>, ApiError> {
     // 404 now travels the error channel; the success type says only what success is.
-    let ticket = repo::get_ticket(state.pg_pool(), id.into()).await?;
+    let ticket = repo::get_ticket(&state, id.into()).await?;
     Ok(Json(ticket))
 }

@@ -1,9 +1,9 @@
+mod cache;
 mod config;
 mod domain;
 mod error;
 mod state;
 mod tickets;
-
 pub use config::AppConfig;
 use sqlx::PgPool;
 use state::AppState;

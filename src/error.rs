@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -43,6 +45,22 @@ impl From<StoreError> for ApiError {
             // constraint name crosses the wire; the driver error is logged as internal.
             other @ StoreError::Constraint(_) => Self::Unprocessable(other.to_string()),
             StoreError::DbDriverInternal(err) => Self::Internal(err.into()),
+        }
+    }
+}
+
+impl From<Arc<StoreError>> for ApiError {
+    fn from(value: Arc<StoreError>) -> Self {
+        match value.as_ref() {
+            StoreError::NotFound(id) => Self::NotFound(*id),
+            // The postgres DETAIL line quotes the whole offending row, so only the
+            // constraint name crosses the wire; the driver error is logged as internal.
+            StoreError::Constraint(name) => {
+                Self::Unprocessable(format!("request violates constraint `{name}`"))
+            }
+            StoreError::DbDriverInternal(_) => {
+                Self::Internal(anyhow::Error::new(Arc::clone(&value)))
+            }
         }
     }
 }

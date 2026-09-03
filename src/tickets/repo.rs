@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::domain::ticket::{
-    Description, Status, Ticket, TicketDraft, TicketId, TicketPatch, Title,
+use crate::{
+    cache,
+    domain::ticket::{Description, Status, Ticket, TicketDraft, TicketId, TicketPatch, Title},
+    state::AppState,
 };
 
 #[derive(Error, Debug)]
@@ -29,7 +33,7 @@ impl From<sqlx::Error> for StoreError {
 }
 
 pub(super) async fn patch_ticket(
-    pool: &PgPool,
+    state: &AppState,
     id: TicketId,
     patch: TicketPatch,
 ) -> Result<(), StoreError> {
@@ -39,9 +43,13 @@ pub(super) async fn patch_ticket(
         status,
     } = patch;
 
+    let cache = state.ticket_cache();
+    let pool = state.pg_pool();
+
     // COALESCE keeps the stored value when a field is absent from the payload, so the
     // whole patch is one atomic statement instead of a read-modify-write.
-    let rows_affected = sqlx::query!(
+    let ticket = sqlx::query_as!(
+        Ticket,
         r#"
             UPDATE tickets
             SET title       = COALESCE($2, title),
@@ -49,26 +57,35 @@ pub(super) async fn patch_ticket(
                 status      = COALESCE($4, status),
                 updated_at  = now()
             WHERE id = $1
+            RETURNING id AS "id: TicketId", 
+            title AS "title: Title", 
+            description AS "description: Description",
+            status AS "status: Status", 
+            updated_at, 
+            created_at
         "#,
         id.0,
         title.map(|value| value.0),
         description.map(|value| value.0),
         status as Option<Status>
     )
-    .execute(pool)
+    .fetch_optional(pool)
     .await?
-    .rows_affected();
+    .ok_or(StoreError::NotFound(id))?;
 
-    if rows_affected == 0 {
-        return Err(StoreError::NotFound(id));
-    }
+    cache.insert(id.0, ticket).await;
     Ok(())
 }
 
-pub(super) async fn get_ticket(pool: &PgPool, id: TicketId) -> Result<Ticket, StoreError> {
-    sqlx::query_as!(
-        Ticket,
-        r#"
+pub(super) async fn get_ticket(state: &AppState, id: TicketId) -> Result<Ticket, Arc<StoreError>> {
+    // check cache
+    let cache = state.ticket_cache();
+    let pool = state.pg_pool();
+    cache
+        .try_get_with(id.0, async {
+            sqlx::query_as!(
+                Ticket,
+                r#"
                 SELECT id AS "id: TicketId", 
                 title AS "title: Title",
                 description as "description: Description", 
@@ -76,14 +93,18 @@ pub(super) async fn get_ticket(pool: &PgPool, id: TicketId) -> Result<Ticket, St
                 created_at, 
                 updated_at FROM tickets WHERE id = $1
             "#,
-        id.0
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or(StoreError::NotFound(id))
+                id.0
+            )
+            .fetch_optional(pool)
+            .await?
+            .ok_or(StoreError::NotFound(id))
+        })
+        .await
 }
 
-pub(super) async fn delete_ticket(pool: &PgPool, id: TicketId) -> Result<(), StoreError> {
+pub(super) async fn delete_ticket(state: &AppState, id: TicketId) -> Result<(), StoreError> {
+    let cache = state.ticket_cache();
+    let pool = state.pg_pool();
     let rows_affected = sqlx::query!("DELETE FROM tickets WHERE id = $1", id.0)
         .execute(pool)
         .await?
@@ -92,6 +113,7 @@ pub(super) async fn delete_ticket(pool: &PgPool, id: TicketId) -> Result<(), Sto
     if rows_affected == 0 {
         return Err(StoreError::NotFound(id));
     }
+    cache.invalidate(&id.0);
     Ok(())
 }
 
@@ -130,9 +152,14 @@ pub(super) async fn ping(pool: &PgPool) -> Result<(), StoreError> {
     Ok(())
 }
 
-pub(super) async fn add_ticket(pool: &PgPool, draft: TicketDraft) -> Result<TicketId, StoreError> {
+pub(super) async fn add_ticket(
+    state: &AppState,
+    draft: TicketDraft,
+) -> Result<TicketId, StoreError> {
     let title = &draft.title().0;
     let description = &draft.description().0;
+    let cache = state.ticket_cache();
+    let pool = state.pg_pool();
     let rec = sqlx::query!(
         r#"
             INSERT INTO tickets (title, description)
