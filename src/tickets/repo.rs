@@ -113,7 +113,7 @@ pub(super) async fn delete_ticket(state: &AppState, id: TicketId) -> Result<(), 
     if rows_affected == 0 {
         return Err(StoreError::NotFound(id));
     }
-    cache.invalidate(&id.0);
+    cache.invalidate(&id.0).await;
     Ok(())
 }
 
@@ -158,13 +158,12 @@ pub(super) async fn add_ticket(
 ) -> Result<TicketId, StoreError> {
     let title = &draft.title().0;
     let description = &draft.description().0;
-    let cache = state.ticket_cache();
     let pool = state.pg_pool();
     let rec = sqlx::query!(
         r#"
             INSERT INTO tickets (title, description)
             VALUES ($1, $2)
-            RETURNING id
+            RETURNING id 
         "#,
         title,
         description
